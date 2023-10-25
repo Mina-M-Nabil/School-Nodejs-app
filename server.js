@@ -1,29 +1,45 @@
 const express = require('express');
-const {dbConnection} = require("./connect/mongo");
+const morgan = require('morgan');
+const {dbConnection} = require('./connect/mongo');
 const config = require('./config/index.config');
-const globalExceptionFilter = require('./common/filters/global-exception.filter');
 const app = express();
 
-process.on('uncaughtException', err => {
-    console.log(`Uncaught Exception:`)
-    console.log(err, err.stack);
+app.use(express.json());
+app.use(morgan('dev'));
 
-    process.exit(1)
-})
+// Handle unhandled exceptions
+process.on('uncaughtException', (err) => {
+    console.error('Uncaught Exception:');
+    console.error(err, err.stack);
+});
 
+// Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
-    console.log('Unhandled rejection at ', promise, `reason:`, reason);
-    process.exit(1)
-})
+    console.error('Unhandled rejection at', promise, 'reason:', reason);
+});
 
-app.use(globalExceptionFilter)
+app.use('/auth', require('./auth/auth.router'));
+
+app.all('*', (req, res, next) => {
+    const path = req.path;
+    next(new Error(`Not found ${path}`)); // Pass the error to the next middleware
+});
+
+// Custom error handler middleware
+app.use((err, req, res, next) => {
+    console.error(err);
+    const status = err.status || 500; // Default to 500 Internal Server Error
+    res.status(status).json({error: err.message, stack: err.stack});
+});
+
+// Start the server after database connection is established
 dbConnection
-    .then(
-        console.log('connected to database successfully'),
+    .then(() => {
+        console.log('Connected to the database successfully');
         app.listen(config.dotEnv.PORT, () => {
-            console.log('listening on port ' + config.dotEnv.PORT);
-        }),
-    )
+            console.log('Listening on port ' + config.dotEnv.PORT);
+        });
+    })
     .catch((err) => {
-        console.log('db connection error: ' + err);
+        console.error('DB connection error: ' + err);
     });
